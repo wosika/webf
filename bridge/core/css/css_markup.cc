@@ -3,6 +3,7 @@
  */
 
 #include "css_markup.h"
+#include <algorithm>
 #include "core/css/parser/css_parser_idioms.h"
 #include "core/css/properties/css_parsing_utils.h"
 #include "core/platform/fonts/font_family.h"
@@ -126,12 +127,24 @@ String SerializeString(const String& string) {
 
 // TODO: May not be right
 void SerializeRaw(const String& string, StringBuilder& append_to) {
+  String sanitized = string;
+  size_t cut = sanitized.length();
+  size_t semicolon = sanitized.Find(';');
+  if (semicolon != kNotFound) {
+    cut = std::min(cut, semicolon);
+  }
+  size_t right_brace = sanitized.Find('}');
+  if (right_brace != kNotFound) {
+    cut = std::min(cut, right_brace);
+  }
+  sanitized = sanitized.Substring(0, cut).StripWhiteSpace();
+
   unsigned index = 0;
-  while (index < string.length()) {
-    UCharCodePoint c = string.CharacterStartingAt(index);
+  while (index < sanitized.length()) {
+    UCharCodePoint c = sanitized.CharacterStartingAt(index);
     if (c == 0) {
       // Handle potential lone surrogate where CharacterStartingAt may not return a code point
-      c = string[index];
+      c = sanitized[index];
     }
 
     index += U16_LENGTH(c);

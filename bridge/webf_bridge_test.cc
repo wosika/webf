@@ -13,9 +13,11 @@
 #endif
 
 #include "webf_bridge_test.h"
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
 #include <unistd.h>
+#endif
+#ifdef __linux__
 #elif defined(_WIN32)
 #include <windows.h>
 #include <dbghelp.h>
@@ -37,7 +39,7 @@ std::unordered_map<int, webf::WebFTestContext*> testContextPool = std::unordered
 #define MAX_BACKTRACE_SIZE 50
 
 void handler(int sig) {
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
  void* array[MAX_BACKTRACE_SIZE];
  size_t size;
 
@@ -72,6 +74,7 @@ void handler(int sig) {
 void* initTestFramework(void* page_) {
   signal(SIGSEGV, handler);  // install handler when crashed.
   signal(SIGABRT, handler);
+  signal(SIGTRAP, handler);
   auto page = reinterpret_cast<webf::WebFPage*>(page_);
   return page->dartIsolateContext()->dispatcher()->PostToJsSync(
       page->isDedicated(), page->contextId(),

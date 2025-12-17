@@ -21,4 +21,3 @@ enum class MediaValueChange {
 }  // namespace webf
 
 #endif  // WEBF_CORE_CSS_MEDIA_VALUE_CHANGE_H_
-

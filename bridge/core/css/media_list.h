@@ -55,10 +55,13 @@ class MediaQuerySet : std::enable_shared_from_this<MediaQuerySet> {
 
   const std::vector<std::shared_ptr<const MediaQuery>>& QueryVector() const { return queries_; }
 
+  void SetRawText(const String& raw_text) { raw_text_ = raw_text; }
+
   String MediaText() const;
 
  private:
   std::vector<std::shared_ptr<const MediaQuery>> queries_;
+  String raw_text_;
 };
 
 class MediaList final : public ScriptWrappable {

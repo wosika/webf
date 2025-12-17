@@ -144,7 +144,9 @@ double CSSNumericLiteralValue::ComputePercentage() const {
 bool CSSNumericLiteralValue::AccumulateLengthArray(CSSLengthArray& length_array, double multiplier) const {
   LengthUnitType length_type;
   bool conversion_success = UnitTypeToLengthUnitType(GetType(), length_type);
-  assert(conversion_success);
+  if (!conversion_success) {
+    return false;
+  }
   if (length_type >= CSSLengthArray::kSize) {
     return false;
   }
@@ -159,7 +161,9 @@ void CSSNumericLiteralValue::AccumulateLengthUnitTypes(LengthTypeFlags& types) c
   }
   LengthUnitType length_type;
   bool conversion_success = UnitTypeToLengthUnitType(GetType(), length_type);
-  assert(conversion_success);
+  if (!conversion_success) {
+    return;
+  }
   types.set(length_type);
 }
 

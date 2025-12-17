@@ -137,6 +137,9 @@ std::shared_ptr<const MediaQuerySet> MediaQuerySet::CopyAndRemove(const String& 
 }
 
 String MediaQuerySet::MediaText() const {
+  if (!raw_text_.IsNull()) {
+    return raw_text_;
+  }
   StringBuilder text;
 
   bool first = true;

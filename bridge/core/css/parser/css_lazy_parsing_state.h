@@ -10,6 +10,7 @@
 #define WEBF_CSS_LAZY_PARSING_STATE_H
 
 #include "bindings/qjs/cppgc/member.h"
+#include "foundation/string/wtf_string.h"
 
 namespace webf {
 
@@ -29,18 +30,18 @@ class Document;
 class CSSLazyParsingState final {
  public:
   CSSLazyParsingState(std::shared_ptr<const CSSParserContext>,
-                      const std::string& sheet_text,
+                      const String& sheet_text,
                       std::shared_ptr<StyleSheetContents>);
 
   std::shared_ptr<const CSSParserContext> Context();
-  const std::string& SheetText() const { return sheet_text_; }
+  const String& SheetText() const { return sheet_text_; }
 
   void Trace(GCVisitor*) const;
 
  private:
   std::shared_ptr<const CSSParserContext> context_;
   // Also referenced on the css resource.
-  std::string sheet_text_;
+  String sheet_text_;
 
   // Weak to ensure lazy state will never cause the contents to live longer than
   // it should (we DCHECK this fact). Normally, the <link> tag will keep the

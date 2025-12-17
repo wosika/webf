@@ -24,19 +24,19 @@ class NthIndexCache {
                                 const CSSSelectorList* selector_list,
                                 const SelectorChecker* checker,
                                 const void* context);
-  
+
   // Calculate the index of element among siblings of the same type (1-based)
   static unsigned NthOfTypeIndex(const Element& element);
-  
+
   // Calculate the index from the end among siblings (1-based)
   static unsigned NthLastChildIndex(const Element& element,
                                     const CSSSelectorList* selector_list,
                                     const SelectorChecker* checker,
                                     const void* context);
-  
+
   // Calculate the index from the end among siblings of the same type (1-based)
   static unsigned NthLastOfTypeIndex(const Element& element);
- 
+
  private:
   // Helper: when a selector list is provided for :nth-child(... of S),
   // only siblings matching that selector list are counted.

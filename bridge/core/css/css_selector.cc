@@ -658,9 +658,6 @@ namespace {
 bool PseudoLiteralLess(const char* literal, const AtomicString& name) {
   const size_t literal_length = std::strlen(literal);
   return webf::VisitCharacters(name, [&](auto chars) -> bool {
-    using CharT = typename std::decay_t<decltype(chars)>::value_type;
-    const size_t name_length = chars.size();
-
     const char* lit_it = literal;
     const char* lit_end = literal + literal_length;
     auto name_it = chars.begin();

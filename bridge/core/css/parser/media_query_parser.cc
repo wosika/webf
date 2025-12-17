@@ -129,6 +129,12 @@ std::shared_ptr<MediaQuerySet> MediaQueryParser::ParseMediaCondition(CSSParserTo
 
 std::shared_ptr<MediaQuerySet> MediaQueryParser::ParseMediaCondition(CSSParserTokenStream& stream,
                                                                      const ExecutingContext* execution_context) {
+  // Preserve the textual form (trimmed of leading/trailing whitespace/comments)
+  // so MediaQuerySet::MediaText() can reflect author input.
+  stream.ConsumeWhitespace();
+  StringView raw_view = CSSVariableParser::StripTrailingWhitespaceAndComments(stream.RemainingText());
+  String raw_text(raw_view);
+
   CSSParserTokenRange range = stream.ConsumeUntilPeekedTypeIs<>();
 
   // As above, build a simple offsets table; media conditions parsed from a
@@ -143,7 +149,11 @@ std::shared_ptr<MediaQuerySet> MediaQueryParser::ParseMediaCondition(CSSParserTo
   CSSParserTokenRange replay_range(tokens);
 
   MediaQueryParser parser(kMediaConditionParser, CSSParserMode::kHTMLStandardMode, execution_context);
-  return parser.ParseImpl(replay_range, offsets);
+  auto result = parser.ParseImpl(replay_range, offsets);
+  if (result) {
+    result->SetRawText(raw_text);
+  }
+  return result;
 }
 
 MediaQueryParser::MediaQueryParser(ParserType parser_type,

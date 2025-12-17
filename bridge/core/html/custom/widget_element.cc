@@ -7,6 +7,8 @@
  * Copyright (C) 2022-present The WebF authors. All rights reserved.
  */
 
+#include <cstdint>
+
 #include "widget_element.h"
 #include "binding_call_methods.h"
 #include "bindings/qjs/script_promise_resolver.h"
@@ -68,7 +70,8 @@ static bool IsAsyncKey(const AtomicString& key, char* normal_string) {
     // Compare the suffix part of the string.
     for (size_t i = 0; i < suffix_len; ++i) {
       CharT ch = chars[str_len - suffix_len + i];
-      if (static_cast<char>(static_cast<unsigned char>(ch)) != suffix[i]) {
+      const uint32_t value = static_cast<uint32_t>(ch);
+      if (value > 0xFF || value != static_cast<unsigned char>(suffix[i])) {
         return false;
       }
     }
@@ -77,10 +80,11 @@ static bool IsAsyncKey(const AtomicString& key, char* normal_string) {
     size_t new_len = str_len - suffix_len;
     for (size_t i = 0; i < new_len; ++i) {
       CharT ch = chars[i];
-      if (static_cast<unsigned char>(ch) > 0xFF) {
+      const uint32_t value = static_cast<uint32_t>(ch);
+      if (value > 0xFF) {
         return false;
       }
-      normal_string[i] = static_cast<char>(static_cast<unsigned char>(ch));
+      normal_string[i] = static_cast<char>(value);
     }
     normal_string[new_len] = '\0';
     return true;

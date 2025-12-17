@@ -240,6 +240,9 @@ String CSSValue::CssText() const {
 }
 
 String CSSValue::CssTextForSerialization() const {
+  if (GetClassType() == kRawClass || GetClassType() == kRepeatStyleClass) {
+    return CssText();
+  }
   if (HasRawText()) {
     return RawText();
   }

@@ -188,30 +188,34 @@ CSSTokenizedValue CSSParserImpl::ConsumeRestrictedPropertyValue(CSSParserTokenSt
 static inline void FilterProperties(std::vector<CSSPropertyValue>& values,
                                     size_t& unused_entries,
                                     std::bitset<kNumCSSProperties>& seen_properties,
-                                    std::unordered_set<std::string>& seen_custom_properties) {
-  // Move !important declarations last, using a simple insertion sort.
-  // This is O(n²), but n is typically small, and std::stable_partition
-  // wants to allocate memory to get to O(n), which is overkill here.
-  // Moreover, this is O(n) if there are no !important properties
-  // (the common case) or only !important properties.
-  size_t last_nonimportant_idx = values.size() - 1;
-  for (size_t i = values.size(); i--;) {
-    if (values[i].IsImportant()) {
-      if (i != last_nonimportant_idx) {
-        // Move this element to the end, preserving the order
-        // of the other elements.
-        CSSPropertyValue tmp = std::move(values[i]);
-        for (size_t j = i; j < last_nonimportant_idx; ++j) {
-          values[j] = std::move(values[j + 1]);
+                                    std::unordered_set<std::string>& seen_custom_properties,
+                                    bool respect_important) {
+  if (respect_important) {
+    // Move !important declarations last, using a simple insertion sort.
+    // This is O(n²), but n is typically small, and std::stable_partition
+    // wants to allocate memory to get to O(n), which is overkill here.
+    // Moreover, this is O(n) if there are no !important properties
+    // (the common case) or only !important properties.
+    size_t last_nonimportant_idx = values.size() - 1;
+    for (size_t i = values.size(); i--;) {
+      if (values[i].IsImportant()) {
+        if (i != last_nonimportant_idx) {
+          // Move this element to the end, preserving the order
+          // of the other elements.
+          CSSPropertyValue tmp = std::move(values[i]);
+          for (size_t j = i; j < last_nonimportant_idx; ++j) {
+            values[j] = std::move(values[j + 1]);
+          }
+          values[last_nonimportant_idx] = std::move(tmp);
         }
-        values[last_nonimportant_idx] = std::move(tmp);
+        --last_nonimportant_idx;
       }
-      --last_nonimportant_idx;
     }
   }
 
-  // Add properties in reverse order so that highest priority definitions are
-  // reached first. Duplicate definitions can then be ignored when found.
+  // Add properties in reverse order so that the last declaration wins.
+  // If |respect_important| is true, the stable reordering above ensures that
+  // !important declarations take priority over non-important ones.
   for (size_t i = values.size(); i--;) {
     const CSSPropertyValue& property = values[i];
     if (property.Id() == CSSPropertyID::kVariable) {
@@ -250,7 +254,10 @@ bool CSSParserImpl::ParseDeclarationList(MutableCSSPropertyValueSet* declaration
   std::bitset<kNumCSSProperties> seen_properties;
   size_t unused_entries = parser.parsed_properties_.size();
   std::unordered_set<std::string> seen_custom_properties;
-  FilterProperties(parser.parsed_properties_, unused_entries, seen_properties, seen_custom_properties);
+  // Declaration lists behave like CSSOM: the last declaration wins, regardless
+  // of !important in earlier declarations.
+  FilterProperties(parser.parsed_properties_, unused_entries, seen_properties, seen_custom_properties,
+                   /*respect_important=*/false);
   
   // Create a vector from the filtered properties (skipping unused entries at the beginning)
   std::vector<CSSPropertyValue> filtered_properties(
@@ -333,7 +340,7 @@ ParseSheetResult CSSParserImpl::ParseStyleSheet(const String& string,
   CSSParserTokenStream stream(tokenizer);
   CSSParserImpl parser(context, style_sheet);
   if (defer_property_parsing == CSSDeferPropertyParsing::kYes) {
-    parser.lazy_state_ = std::make_shared<CSSLazyParsingState>(context, string.ToUTF8String(), parser.style_sheet_);
+    parser.lazy_state_ = std::make_shared<CSSLazyParsingState>(context, string, parser.style_sheet_);
   }
   ParseSheetResult result = ParseSheetResult::kSucceeded;
   auto consume_rule_list_callback = [&style_sheet, &result, &string, allow_import_rules, context](
@@ -851,7 +858,7 @@ static std::shared_ptr<ImmutableCSSPropertyValueSet> CreateCSSPropertyValueSet(
   size_t unused_entries = parsed_properties.size();
   std::unordered_set<std::string> seen_custom_properties;
 
-  FilterProperties(parsed_properties, unused_entries, seen_properties, seen_custom_properties);
+  FilterProperties(parsed_properties, unused_entries, seen_properties, seen_custom_properties, /*respect_important=*/true);
 
   auto result =
       ImmutableCSSPropertyValueSet::Create(parsed_properties.data() + unused_entries, parsed_properties.size() - unused_entries, mode);
@@ -1559,26 +1566,43 @@ void CSSParserImpl::ConsumeErroneousAtRule(CSSParserTokenStream& stream, CSSAtRu
 // This will work even for UTF-16, although with some more false positives
 // with certain Unicode characters such as U+017E (LATIN SMALL LETTER Z
 // WITH CARON). This is, again, not a big problem for us.
-static bool MayContainNestedRules(const std::string& text, size_t offset, size_t length) {
+static bool MayContainNestedRules(const String& text, size_t offset, size_t length) {
   if (length < 2u) {
     // {} is the shortest possible block (but if there's
     // a lone { and then EOF, we will be called with length 1).
     return false;
   }
 
-  size_t char_size = sizeof(uint8_t);
-
   // Strip away the outer {} pair (the { would always give us a false positive).
-  DCHECK_EQ(text[offset], '{');
-  if (text[offset + length - 1] != '}') {
+  DCHECK_LT(offset, text.length());
+  DCHECK_LE(offset + length, text.length());
+
+  if (text.Is8Bit()) {
+    const LChar* chars = text.Characters8();
+    DCHECK_EQ(chars[offset], '{');
+    if (chars[offset + length - 1] != '}') {
+      return true;
+    }
+    ++offset;
+    length -= 2;
+    return memchr(reinterpret_cast<const char*>(chars) + offset, '{', length) != nullptr;
+  }
+
+  const UChar* chars = text.Characters16();
+  DCHECK_EQ(chars[offset], '{');
+  if (chars[offset + length - 1] != '}') {
     // EOF within the block, so just be on the safe side
     // and use the normal (non-lazy) code path.
     return true;
   }
   ++offset;
   length -= 2;
-
-  return memchr(reinterpret_cast<const char*>(text.data()) + offset * char_size, '{', length * char_size) != nullptr;
+  for (size_t i = 0; i < length; ++i) {
+    if (chars[offset + i] == '{') {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::shared_ptr<StyleRule> CSSParserImpl::ConsumeStyleRule(CSSParserTokenStream& stream,
@@ -1644,7 +1668,7 @@ std::shared_ptr<StyleRule> CSSParserImpl::ConsumeStyleRule(CSSParserTokenStream&
   }
 
   assert(stream.Peek().GetType() == kLeftBraceToken);
-  bool is_css_lazy_parsing_fast_path_enabled_ = true;
+  bool is_css_lazy_parsing_fast_path_enabled_ = false;
 
   if (is_css_lazy_parsing_fast_path_enabled_) {
     if (selector_vector.empty() || custom_property_ambiguity) {
@@ -1668,13 +1692,13 @@ std::shared_ptr<StyleRule> CSSParserImpl::ConsumeStyleRule(CSSParserTokenStream&
     CSSParserTokenStream::BlockGuard guard(stream);
     return ConsumeStyleRuleContents(selector_vector, stream);
   } else {
-    CSSParserTokenStream::BlockGuard guard(stream);
-
     if (selector_vector.empty()) {
       // Parse error, invalid selector list.
+      CSSParserTokenStream::BlockGuard guard(stream);
       return nullptr;
     }
     if (custom_property_ambiguity) {
+      CSSParserTokenStream::BlockGuard guard(stream);
       return nullptr;
     }
 
@@ -1682,7 +1706,8 @@ std::shared_ptr<StyleRule> CSSParserImpl::ConsumeStyleRule(CSSParserTokenStream&
     if (!observer_ && lazy_state_) {
       DCHECK(style_sheet_);
 
-      size_t block_start_offset = stream.Offset() - 1;  // - 1 for the {.
+      size_t block_start_offset = stream.LookAheadOffset();
+      CSSParserTokenStream::BlockGuard guard(stream);
       guard.SkipToEndOfBlock();
       size_t block_length = stream.Offset() - block_start_offset;
 
@@ -1701,6 +1726,7 @@ std::shared_ptr<StyleRule> CSSParserImpl::ConsumeStyleRule(CSSParserTokenStream&
       return StyleRule::Create(selector_vector,
                                std::make_shared<CSSLazyPropertyParserImpl>(block_start_offset, lazy_state_));
     }
+    CSSParserTokenStream::BlockGuard guard(stream);
     return ConsumeStyleRuleContents(selector_vector, stream);
   }
 }

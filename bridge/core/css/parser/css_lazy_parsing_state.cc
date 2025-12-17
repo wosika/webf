@@ -14,7 +14,7 @@
 namespace webf {
 
 CSSLazyParsingState::CSSLazyParsingState(std::shared_ptr<const CSSParserContext> context,
-                                         const std::string& sheet_text,
+                                         const String& sheet_text,
                                          std::shared_ptr<StyleSheetContents> contents)
     : context_(context),
       sheet_text_(sheet_text),

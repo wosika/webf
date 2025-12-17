@@ -646,6 +646,47 @@ String StylePropertySerializer::SerializeShorthand(CSSPropertyID property_id) co
     return result;
   }
 
+  // If all longhands expanded from this shorthand preserved identical raw text,
+  // prefer returning that raw value directly. This matches the expectation that
+  // `getPropertyValue(shorthand)` reflects the author's textual input when
+  // available (e.g., margin set via "10px 20px").
+  //
+  // Avoid this shortcut for complex shorthands like `background`, where
+  // canonical serialization of sub-components (e.g. repeat-x) is expected.
+  if (property_id != CSSPropertyID::kBackground) {
+  String common_raw;
+  bool has_common_raw = true;
+  const unsigned longhand_count = shorthand.length();
+  for (unsigned i = 0; i < longhand_count; ++i) {
+    const CSSProperty* longhand = shorthand.properties()[i];
+    if (!longhand) {
+      has_common_raw = false;
+      break;
+    }
+    int idx = property_set_.FindPropertyIndex(*longhand);
+    if (idx == -1) {
+      has_common_raw = false;
+      break;
+    }
+    PropertyValueForSerializer prop = property_set_.PropertyAt(static_cast<unsigned>(idx));
+    const std::shared_ptr<const CSSValue>* value_ptr = prop.Value();
+    if (!value_ptr || !(*value_ptr) || !(*value_ptr)->HasRawText()) {
+      has_common_raw = false;
+      break;
+    }
+    const String& raw = (*value_ptr)->RawText();
+    if (common_raw.IsNull()) {
+      common_raw = raw;
+    } else if (common_raw != raw) {
+      has_common_raw = false;
+      break;
+    }
+  }
+  if (has_common_raw && !common_raw.IsNull() && common_raw.length()) {
+    return common_raw;
+  }
+  }
+
   switch (property_id) {
     case CSSPropertyID::kAnimation:
       return GetLayeredShorthandValue(animationShorthand());

@@ -105,11 +105,6 @@ bool CSSPropertyParser::ParseCSSWideKeyword(CSSPropertyID unresolved_property, b
 bool CSSPropertyParser::ParseValueStart(webf::CSSPropertyID unresolved_property,
                                         bool allow_important_annotation,
                                         StyleRule::RuleType rule_type) {
-  // Match Blink: pass allow_important_annotation when checking CSS-wide keywords.
-  if (ParseCSSWideKeyword(unresolved_property, allow_important_annotation)) {
-    return true;
-  }
-
   CSSPropertyID property_id = ResolveCSSPropertyID(unresolved_property);
   const CSSProperty& property = CSSProperty::Get(property_id);
   // If a CSSPropertyID is only a known descriptor (@fontface, @property), not a
@@ -130,20 +125,82 @@ bool CSSPropertyParser::ParseValueStart(webf::CSSPropertyID unresolved_property,
   const bool important = CSSParserImpl::RemoveImportantAnnotationIfPresent(value);
   value.text = CSSVariableParser::StripTrailingWhitespaceAndComments(value.text);
 
-  auto raw = std::make_shared<CSSRawValue>(String(value.text));
-  // Record the parser context base URL as a base href on this raw value so
-  // that later pipeline stages (e.g. StyleEngine -> UICommand bridge) can
-  // resolve relative url() tokens consistently with the stylesheet URL.
-  // Treat about:blank as "no href" so consumers fall back to the document or
-  // controller URL rather than using a synthetic base.
-  if (context_) {
+  auto apply_base_href = [&](const std::shared_ptr<const CSSValue>& parsed_value) {
+    const auto* raw_value = DynamicTo<CSSRawValue>(parsed_value.get());
+    if (!raw_value || !context_) {
+      return;
+    }
     const KURL& base_url = context_->BaseURL();
     std::string base = base_url.GetString();
-    if (!base_url.IsEmpty() && base_url.IsValid() && base != "about:blank") {
-      raw->SetBaseHref(String::FromUTF8(base));
+    if (base_url.IsEmpty() || !base_url.IsValid() || base == "about:blank") {
+      return;
     }
+    const_cast<CSSRawValue*>(raw_value)->SetBaseHref(String::FromUTF8(base));
+  };
+
+  String raw_text(value.text);
+  CSSTokenizer tokenizer(raw_text);
+  CSSParserTokenStream value_stream(tokenizer);
+  value_stream.ConsumeWhitespace();
+
+  if (auto css_wide_keyword = css_parsing_utils::ConsumeCSSWideKeyword(value_stream)) {
+    if (!value_stream.AtEnd()) {
+      return false;
+    }
+
+    css_wide_keyword->SetRawText(raw_text);
+    apply_base_href(css_wide_keyword);
+
+    const size_t before = parsed_properties_->size();
+    const StylePropertyShorthand& shorthand = shorthandForProperty(property_id);
+    if (!shorthand.length()) {
+      AddProperty(property_id, CSSPropertyID::kInvalid, css_wide_keyword, important,
+                  css_parsing_utils::IsImplicitProperty::kNotImplicit, *parsed_properties_);
+    } else {
+      css_parsing_utils::AddExpandedPropertyForValue(property_id, css_wide_keyword, important, *parsed_properties_);
+    }
+
+    for (size_t i = before; i < parsed_properties_->size(); ++i) {
+      const auto* value_ptr = (*parsed_properties_)[i].Value();
+      if (!value_ptr || !(*value_ptr)) {
+        continue;
+      }
+      (*value_ptr)->SetRawText(raw_text);
+      apply_base_href(*value_ptr);
+    }
+    return true;
   }
-  AddProperty(property_id, CSSPropertyID::kInvalid, raw, important,
+
+  if (property.IsShorthand()) {
+    const size_t before = parsed_properties_->size();
+    const auto local_context = CSSParserLocalContext().WithCurrentShorthand(property_id);
+    bool parse_success =
+        To<Shorthand>(property).ParseShorthand(important, value_stream, context_, local_context, *parsed_properties_);
+    if (!parse_success || !value_stream.AtEnd()) {
+      parsed_properties_->erase(parsed_properties_->begin() + before, parsed_properties_->end());
+      return false;
+    }
+    for (size_t i = before; i < parsed_properties_->size(); ++i) {
+      const auto* value_ptr = (*parsed_properties_)[i].Value();
+      if (!value_ptr || !(*value_ptr)) {
+        continue;
+      }
+      (*value_ptr)->SetRawText(raw_text);
+      apply_base_href(*value_ptr);
+    }
+    return true;
+  }
+
+  std::shared_ptr<const CSSValue> parsed_value =
+      css_parsing_utils::ParseLonghand(property_id, CSSPropertyID::kInvalid, context_, value_stream);
+
+  if (!parsed_value || !value_stream.AtEnd()) {
+    return false;
+  }
+
+  parsed_value->SetRawText(raw_text);
+  apply_base_href(parsed_value);
+  AddProperty(property_id, CSSPropertyID::kInvalid, parsed_value, important,
               css_parsing_utils::IsImplicitProperty::kNotImplicit, *parsed_properties_);
   return true;
 }

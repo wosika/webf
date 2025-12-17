@@ -44,7 +44,7 @@ class MediaQuerySetResult {
   bool Result() const { return result_; }
 
  private:
-  std::shared_ptr<const MediaQuerySet> media_queries_;
+  const MediaQuerySet* media_queries_;
   bool result_;
 };
 
